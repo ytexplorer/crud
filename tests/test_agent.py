@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 
 import pytest
@@ -87,6 +88,29 @@ def test_triage_candidates_explicit_item_allows_retriage():
     db.set_triage(triaged, "old note")
     ids = [i["id"] for i in agent.triage_candidates(db.get_items(), item_id=triaged)]
     assert ids == [triaged]
+
+
+def test_load_env_file_sets_key(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("# comment\nANTHROPIC_API_KEY='sk-ant-test'\n\nnot a pair\n")
+    monkeypatch.setattr(agent, "ENV_FILE", env_file)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    agent.load_env_file()
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-test"
+
+
+def test_load_env_file_never_overrides_environment(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("ANTHROPIC_API_KEY=sk-ant-from-file\n")
+    monkeypatch.setattr(agent, "ENV_FILE", env_file)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-from-shell")
+    agent.load_env_file()
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-from-shell"
+
+
+def test_load_env_file_missing_is_noop(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "ENV_FILE", tmp_path / "absent.env")
+    agent.load_env_file()  # must not raise
 
 
 def test_triage_text_format():

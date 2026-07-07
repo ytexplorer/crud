@@ -12,18 +12,23 @@ Usage:
     .venv/bin/python agent.py --item 3    # one item by id (re-triages it)
     .venv/bin/python agent.py --no-save   # print only, don't store on the items
 
-Auth: uses ANTHROPIC_API_KEY or an `ant auth login` profile.
+Auth: put `ANTHROPIC_API_KEY=sk-ant-...` in a .env file next to this script
+(gitignored) or export it in your shell.
 """
 
 import argparse
 import base64
 import json
+import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 import anthropic
 
 import db
+
+ENV_FILE = Path(__file__).with_name(".env")
 
 MODEL = "claude-opus-4-8"
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # API limit per image
@@ -154,12 +159,21 @@ def triage_text(entry: dict) -> str:
     return f"{entry['summary'].strip()}\n\nRecommended: {entry['recommendation'].strip()}"
 
 
+def load_env_file() -> None:
+    """Load KEY=VALUE lines from .env into the environment (existing vars win)."""
+    if not ENV_FILE.exists():
+        return
+    for line in ENV_FILE.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
 def run(items: list[dict], now: datetime, model: str = MODEL) -> dict:
     """Ask the model to triage the items; returns {'items': [...], 'overall': str}."""
-    try:
-        client = anthropic.Anthropic()
-    except anthropic.AnthropicError as exc:
-        sys.exit(f"Anthropic client error: {exc}")
+    load_env_file()
+    client = anthropic.Anthropic()
     tools = [
         {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 10},
         {"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
@@ -181,13 +195,12 @@ def run(items: list[dict], now: datetime, model: str = MODEL) -> dict:
                 messages=messages,
             ) as stream:
                 response = stream.get_final_message()
-        except anthropic.AuthenticationError:
-            sys.exit("Invalid Anthropic API credentials.")
-        except TypeError as exc:
-            if "authentication" in str(exc).lower():
-                sys.exit("No Anthropic credentials found — set ANTHROPIC_API_KEY "
-                         "or run `ant auth login`.")
-            raise
+        except (anthropic.AuthenticationError, TypeError) as exc:
+            if isinstance(exc, TypeError) and "authentication" not in str(exc).lower():
+                raise
+            sys.exit(f"Anthropic auth failed ({exc.__class__.__name__}). Put "
+                     f"ANTHROPIC_API_KEY=sk-ant-... in {ENV_FILE} or export it "
+                     f"in your shell.")
 
         if response.stop_reason == "pause_turn":
             # Server-side tool loop hit its iteration limit; resume where it left off.

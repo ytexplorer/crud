@@ -21,8 +21,8 @@ python3 -m venv .venv
 # Single test
 .venv/bin/pytest tests/test_db.py::test_update_item
 
-# Run the triage agent (read-only analysis of stored items; needs ANTHROPIC_API_KEY
-# or an `ant auth login` profile)
+# Run the triage agent (auth: ANTHROPIC_API_KEY in a gitignored .env file next to
+# agent.py, or exported in the shell — shell wins)
 .venv/bin/python agent.py            # unprocessed items
 .venv/bin/python agent.py --all      # include processed
 .venv/bin/python agent.py --item 3   # one item
